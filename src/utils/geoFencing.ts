@@ -17,7 +17,7 @@ interface GeoAlert {
 
 class GeoFencingManager {
   private rules: GeoFencingRule = {
-    allowedCountries: ['United States', 'United Kingdom', 'Germany'], // Default allowed countries
+    allowedCountries: ['United States', 'United Kingdom', 'Germany', 'India'], // Default allowed countries
     alertOnUnknown: true,
     enabled: true
   };

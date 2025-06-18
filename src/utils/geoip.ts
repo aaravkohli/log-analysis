@@ -1,4 +1,3 @@
-
 interface GeoLocation {
   country: string;
   countryCode: string;
@@ -60,6 +59,9 @@ class GeoIPManager {
     } else if (ip.startsWith('172.16.')) {
       // Private range - map to Germany for this demo
       return locations[3]; // Germany
+    } else if (ip === '203.0.114.10') {
+      // Dedicated IP for India
+      return locations[8]; // India
     } else {
       // For any other IPs, use a deterministic approach based on the IP itself
       const ipParts = ip.split('.');

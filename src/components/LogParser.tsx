@@ -53,7 +53,7 @@ const LogParser = ({ logEntries, isMonitoring }: LogParserProps) => {
 
   // Check for suspicious locations
   const suspiciousCountries = filteredLogs.filter(log => 
-    log.country && !['United States', 'United Kingdom', 'Germany'].includes(log.country)
+    log.country && !['United States', 'United Kingdom', 'Germany', 'India'].includes(log.country)
   );
 
   return (
@@ -171,7 +171,7 @@ const LogParser = ({ logEntries, isMonitoring }: LogParserProps) => {
                   </div>
                   <div className="text-right">
                     <p className="text-gray-400 text-xs">Port {entry.port}</p>
-                    {!['United States', 'United Kingdom', 'Germany'].includes(entry.country) && entry.country && (
+                    {!['United States', 'United Kingdom', 'Germany', 'India'].includes(entry.country) && entry.country && (
                       <Badge variant="destructive" className="text-xs mt-1">
                         <AlertTriangle className="h-2 w-2 mr-1" />
                         Alert

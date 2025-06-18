@@ -89,7 +89,7 @@ const Index = () => {
   }, [isMonitoring, logEntries, threats]);
 
   const generateMockLogEntry = async () => {
-    const ips = ['192.168.1.100', '10.0.0.5', '203.0.113.10', '198.51.100.20', '172.16.0.50'];
+    const ips = ['192.168.1.100', '10.0.0.5', '203.0.113.10', '198.51.100.20', '172.16.0.50', '203.0.114.10'];
     const users = ['admin', 'root', 'user', 'test', 'guest'];
     const statuses = ['failed', 'failed', 'failed', 'success']; // More failures to simulate attacks
     

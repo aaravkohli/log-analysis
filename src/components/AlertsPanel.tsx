@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Bell, Mail, MessageSquare, Settings, AlertTriangle, Check, Globe, Shield } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
@@ -214,10 +213,11 @@ const AlertsPanel: React.FC<AlertsPanelProps> = ({ threats, geoAlerts }) => {
                   <Mail className="h-4 w-4 text-blue-400" />
                   <span className="text-gray-300">Email Notifications</span>
                 </div>
-                <Switch
+                <input
+                  type="checkbox"
                   checked={alertSettings.emailAlerts}
-                  onCheckedChange={(checked) => 
-                    setAlertSettings({...alertSettings, emailAlerts: checked})
+                  onChange={(e) => 
+                    setAlertSettings({...alertSettings, emailAlerts: e.target.checked})
                   }
                 />
               </div>
@@ -227,10 +227,11 @@ const AlertsPanel: React.FC<AlertsPanelProps> = ({ threats, geoAlerts }) => {
                   <Bell className="h-4 w-4 text-green-400" />
                   <span className="text-gray-300">Push Notifications</span>
                 </div>
-                <Switch
+                <input
+                  type="checkbox"
                   checked={alertSettings.pushNotifications}
-                  onCheckedChange={(checked) => 
-                    setAlertSettings({...alertSettings, pushNotifications: checked})
+                  onChange={(e) => 
+                    setAlertSettings({...alertSettings, pushNotifications: e.target.checked})
                   }
                 />
               </div>
@@ -240,10 +241,11 @@ const AlertsPanel: React.FC<AlertsPanelProps> = ({ threats, geoAlerts }) => {
                   <MessageSquare className="h-4 w-4 text-purple-400" />
                   <span className="text-gray-300">Slack Integration</span>
                 </div>
-                <Switch
+                <input
+                  type="checkbox"
                   checked={alertSettings.slackIntegration}
-                  onCheckedChange={(checked) => 
-                    setAlertSettings({...alertSettings, slackIntegration: checked})
+                  onChange={(e) => 
+                    setAlertSettings({...alertSettings, slackIntegration: e.target.checked})
                   }
                 />
               </div>

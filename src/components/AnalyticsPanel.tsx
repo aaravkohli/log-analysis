@@ -134,14 +134,23 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ stats, threats, logEntr
     return acc;
   }, []);
 
-  // Process data for activity timeline
-  const timelineData = logEntries
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-    .map(entry => ({
-      time: new Date(entry.timestamp).toLocaleTimeString(),
-      status: entry.status,
-      ip: entry.ip
-    }));
+  // Process data for activity timeline (group by 6-hour bucket, including unknown)
+  const timelineBuckets: Record<string, { success: number; failed: number; unknown: number }> = {};
+  logEntries.forEach(entry => {
+    const date = new Date(entry.timestamp);
+    const hour = date.getHours();
+    const bucketStart = Math.floor(hour / 6) * 6;
+    const bucketEnd = bucketStart + 6;
+    const bucketLabel = `${bucketStart.toString().padStart(2, '0')}:00-${bucketEnd.toString().padStart(2, '0')}:00`;
+    if (!timelineBuckets[bucketLabel]) timelineBuckets[bucketLabel] = { success: 0, failed: 0, unknown: 0 };
+    if (entry.status === 'success') timelineBuckets[bucketLabel].success++;
+    else if (entry.status === 'failed') timelineBuckets[bucketLabel].failed++;
+    else timelineBuckets[bucketLabel].unknown++;
+  });
+  const timelineData = Object.entries(timelineBuckets).map(([time, counts]) => ({
+    time,
+    ...counts
+  }));
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-full overflow-hidden">
@@ -292,7 +301,7 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ stats, threats, logEntr
               <CardContent className="pt-0">
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={timelineData}>
+                    <AreaChart data={timelineData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                       <XAxis 
                         dataKey="time" 
@@ -301,28 +310,18 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ stats, threats, logEntr
                         textAnchor="end"
                         height={60}
                       />
-                      <YAxis tick={{ fill: '#9ca3af' }} />
+                      <YAxis tick={{ fill: '#9ca3af' }} allowDecimals={false} />
                       <Tooltip 
                         contentStyle={{ 
                           backgroundColor: '#1f2937', 
                           border: '1px solid #374151',
                           color: '#fff'
                         }}
-                        formatter={(value: any, name: string) => {
-                          if (name === 'status') {
-                            return [value === 'success' ? 'Success' : 'Failed', 'Status'];
-                          }
-                          return [value, name];
-                        }}
                       />
-                      <Line 
-                        type="monotone" 
-                        dataKey="status" 
-                        stroke="#8b5cf6" 
-                        strokeWidth={2}
-                        dot={{ fill: '#8b5cf6' }}
-                      />
-                    </LineChart>
+                      <Area type="monotone" dataKey="success" stackId="1" stroke="#22c55e" fill="#22c55e" name="Success" />
+                      <Area type="monotone" dataKey="failed" stackId="1" stroke="#ef4444" fill="#ef4444" name="Failed" />
+                      <Area type="monotone" dataKey="unknown" stackId="1" stroke="#facc15" fill="#facc15" name="Unknown" />
+                    </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </CardContent>
