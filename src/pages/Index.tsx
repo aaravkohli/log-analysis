@@ -11,7 +11,6 @@ import Dashboard from '@/components/Dashboard';
 import AlertsPanel from '@/components/AlertsPanel';
 import ReportsPanel from '@/components/ReportsPanel';
 import AnalyticsPanel from '@/components/AnalyticsPanel';
-import WorldMap, { CountryStat } from '@/components/WorldMap';
 import { historicalDataManager } from '@/utils/historicalData';
 import { geoIPManager } from '@/utils/geoip';
 import { geoFencingManager } from '@/utils/geoFencing';
@@ -130,23 +129,6 @@ const Index = () => {
   const toggleMonitoring = () => {
     setIsMonitoring(!isMonitoring);
   };
-
-  const allowedCountries = geoFencingManager.getRules().allowedCountries;
-  const restrictedCountries = ["Russia", "China"]; // Example, adjust as needed
-  const monitoredCountries: string[] = []; // Add logic if you have monitored
-
-  const countryCounts: Record<string, number> = {};
-  logEntries.forEach(entry => {
-    if (!entry.country) return;
-    countryCounts[entry.country] = (countryCounts[entry.country] || 0) + 1;
-  });
-
-  const countryStats: CountryStat[] = Object.entries(countryCounts).map(([name, count]) => {
-    let status: "allowed" | "restricted" | "monitored" = "monitored";
-    if (allowedCountries.includes(name)) status = "allowed";
-    else if (restrictedCountries.includes(name)) status = "restricted";
-    return { name, count, status };
-  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -272,7 +254,6 @@ const Index = () => {
             <TabsTrigger value="alerts">Alerts</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="reports">Reports</TabsTrigger>
-            <TabsTrigger value="geo">Geo</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard">
@@ -298,10 +279,6 @@ const Index = () => {
 
           <TabsContent value="reports">
             <ReportsPanel logEntries={logEntries} threats={threats} stats={stats} />
-          </TabsContent>
-
-          <TabsContent value="geo">
-            <WorldMap countryStats={countryStats} />
           </TabsContent>
         </Tabs>
       </div>

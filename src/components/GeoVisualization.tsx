@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -113,6 +112,20 @@ const GeoVisualization = ({ logEntries }: GeoVisualizationProps) => {
   const countryStats = getCountryStats();
   const threateningCountries = getTopThreateningCountries();
 
+  // Build countryStatsForMap for the map
+  const geoRules = geoFencingManager.getRules();
+  const countryStatsForMap = countryStats.map(cs => {
+    let status: 'allowed' | 'restricted' | 'monitored';
+    if (cs.country === 'Unknown') status = 'monitored';
+    else if (geoRules.allowedCountries.includes(cs.country)) status = 'allowed';
+    else status = 'restricted';
+    return {
+      name: cs.country,
+      count: cs.attempts,
+      status,
+    };
+  });
+
   if (loading) {
     return (
       <Card className="bg-slate-800/50 border-slate-700">
@@ -136,7 +149,7 @@ const GeoVisualization = ({ logEntries }: GeoVisualizationProps) => {
       )}
 
       {/* World Map */}
-      <WorldMap logEntries={logEntries} />
+      <WorldMap countryStats={countryStatsForMap} />
 
       {/* Geographic Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
