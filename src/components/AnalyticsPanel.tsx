@@ -150,7 +150,7 @@ const AnalyticsPanel: React.FC<AnalyticsPanelProps> = ({ stats, threats, logEntr
   const timelineData = Object.entries(timelineBuckets).map(([time, counts]) => ({
     time,
     ...counts
-  }));
+    }));
 
   return (
     <div className="space-y-4 sm:space-y-6 max-w-full overflow-hidden">

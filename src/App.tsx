@@ -5,15 +5,15 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 
 const App = () => (
-  <TooltipProvider>
-    <Toaster />
-    <Sonner />
-    <BrowserRouter>
-      <Routes>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <Routes>
         <Route path="/*" element={<Index />} />
-      </Routes>
-    </BrowserRouter>
-  </TooltipProvider>
+        </Routes>
+      </BrowserRouter>
+    </TooltipProvider>
 );
 
 export default App;
