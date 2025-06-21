@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { geoIPManager, type GeoLocation } from '@/utils/geoip';
 import { geoFencingManager, type GeoAlert } from '@/utils/geoFencing';
 import WorldMap from './WorldMap';
-
 import { errorHandler } from '@/utils/errorHandler';
 
 interface GeoVisualizationProps {
