@@ -6,7 +6,8 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { FileText, Download, Calendar, TrendingUp, AlertTriangle, Shield } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface ReportsPanelProps {
   logEntries: any[];
@@ -14,88 +15,205 @@ interface ReportsPanelProps {
   threats: any[];
 }
 
-const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats }) => {
+const GEMINI_API_KEY = import.meta.env.VITE_HUGGING_GEMINI_API_KEY;
+
+// Helper: Generate report prompt template
+const generateReportPrompt = ({
+  reportType,
+  timePeriod,
+  logSample
+}: {
+  reportType: 'Security Summary' | 'Detailed Analysis' | 'Compliance Report';
+  timePeriod: 'last 1 hour' | 'last 24 hours' | 'last 7 days';
+  logSample: string;
+}) => {
+  return `
+You are a cybersecurity analyst.
+
+Generate a ${reportType} for the ${timePeriod} based on the following web server log data.
+
+Log Sample:
+${logSample}
+
+The report should include:
+${reportType === 'Security Summary' ? `
+- Overall threat count and summary
+- Most frequent IPs
+- Top threat types
+- Any suspicious patterns
+- Actionable recommendations
+` : reportType === 'Detailed Analysis' ? `
+- IPs sorted by threat count
+- Status code breakdown (200, 403, 404, 500)
+- Suspicious POST/PUT requests
+- Time series of threat activity
+- Breakdown by country or method if available
+` : `
+- Any repeated failed login attempts
+- Anomalies that violate expected compliance (e.g., 500 errors from unknown IPs)
+- Requests from geo-blocked countries
+- Compliance checklist notes
+- Recommended mitigations and logging best practices
+`}
+Keep the tone formal and structured. Present as a professional cybersecurity report.
+`;
+};
+
+const ReportsPanel = ({ logEntries, stats, threats }: ReportsPanelProps) => {
   const [reportPeriod, setReportPeriod] = useState('24h');
   const [reportType, setReportType] = useState('security');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  // Generate report data
-  const generateSecurityReport = () => {
-    const report = {
-      period: reportPeriod,
-      generatedAt: new Date().toISOString(),
-      summary: {
-        totalAttempts: stats.totalAttempts,
-        failedAttempts: stats.failedAttempts,
-        successRate: ((stats.successfulLogins / stats.totalAttempts) * 100).toFixed(1),
-        uniqueIPs: stats.uniqueIPs,
-        threatsDetected: threats.length
-      },
-      topThreats: threats.slice(0, 5),
-      recommendations: []
+  // Helper: Build prompt data
+  const buildPromptData = () => {
+    const timePeriodMap = {
+      '1h': 'last 1 hour',
+      '24h': 'last 24 hours', 
+      '7d': 'last 7 days',
+      '30d': 'last 30 days'
+    };
+    
+    const reportTypeMap = {
+      'security': 'Security Summary',
+      'detailed': 'Detailed Analysis', 
+      'compliance': 'Compliance Report'
     };
 
-    // Generate recommendations
-    if (stats.failedAttempts > stats.successfulLogins) {
-      report.recommendations.push({
-        type: 'HIGH',
-        title: 'High Failed Login Rate',
-        description: 'Consider implementing additional security measures such as fail2ban or rate limiting.'
-      });
-    }
+    const logSample = logEntries.slice(0, 20).map(entry => 
+      `${entry.timestamp},${entry.ip},${entry.method || 'GET'},${entry.resource || '/'},${entry.status || 200},${entry.bytes || 0},"${entry.userAgent || 'Unknown'}"`
+    ).join('\n');
 
-    if (threats.filter(t => t.severity === 'HIGH').length > 0) {
-      report.recommendations.push({
-        type: 'CRITICAL',
-        title: 'Critical Threats Detected',
-        description: 'Immediate action required. Review and block suspicious IP addresses.'
-      });
-    }
-
-    if (stats.uniqueIPs > 20) {
-      report.recommendations.push({
-        type: 'MEDIUM',
-        title: 'High IP Diversity',
-        description: 'Monitor for distributed attacks. Consider geographical restrictions if appropriate.'
-      });
-    }
-
-    return report;
+    return {
+      reportType: reportTypeMap[reportType] as 'Security Summary' | 'Detailed Analysis' | 'Compliance Report',
+      timePeriod: timePeriodMap[reportPeriod] as 'last 1 hour' | 'last 24 hours' | 'last 7 days',
+      logSample
+    };
   };
 
-  const report = generateSecurityReport();
-
-  const exportReport = (format: string) => {
-    const filename = `security_report_${new Date().toISOString().split('T')[0]}.${format}`;
-    
-    if (format === 'json') {
-      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
-      downloadFile(blob, filename);
-    } else if (format === 'csv') {
-      const csv = [
-        'Metric,Value',
-        `Total Attempts,${report.summary.totalAttempts}`,
-        `Failed Attempts,${report.summary.failedAttempts}`,
-        `Success Rate,${report.summary.successRate}%`,
-        `Unique IPs,${report.summary.uniqueIPs}`,
-        `Threats Detected,${report.summary.threatsDetected}`,
-        '',
-        'Top Threats',
-        'Type,IP,Severity,Description',
-        ...report.topThreats.map(t => `${t.type},${t.ip},${t.severity},"${t.description}"`)
-      ].join('\n');
+  // Helper: Call Hugging Face API
+  const callHuggingFace = async (promptData) => {
+    setError('');
+    setLoading(true);
+    try {
+      const prompt = generateReportPrompt(promptData);
+      const response = await fetch("https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${GEMINI_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ inputs: prompt })
+      });
       
-      const blob = new Blob([csv], { type: 'text/csv' });
-      downloadFile(blob, filename);
+      if (!response.ok) throw new Error('Hugging Face API error');
+      const data = await response.json();
+      
+      // Hugging Face returns an array with the generated text
+      const generatedText = Array.isArray(data) ? data[0]?.generated_text || data[0] : data.generated_text || data[0];
+      
+      // Convert the generated text to a structured report format
+      const report = {
+        title: `${promptData.reportType} Report`,
+        generatedAt: new Date().toISOString(),
+        period: promptData.timePeriod,
+        content: generatedText,
+        sections: [
+          {
+            header: 'Executive Summary',
+            text: generatedText
+          }
+        ],
+        recommendations: [
+          'Review and block suspicious IP addresses',
+          'Monitor for unusual traffic patterns',
+          'Implement rate limiting on sensitive endpoints',
+          'Regular security audits and log analysis'
+        ]
+      };
+      
+      setLoading(false);
+      return report;
+    } catch (e) {
+      setLoading(false);
+      setError('Failed to generate report: ' + (e.message || e));
+      return null;
     }
   };
 
-  const downloadFile = (blob: Blob, filename: string) => {
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    window.URL.revokeObjectURL(url);
+  // Helper: Build PDF from report
+  const buildPDF = (report) => {
+    try {
+      const doc = new jsPDF();
+      let y = 20;
+      doc.setFontSize(18);
+      doc.text(report.title || 'Security Report', 14, y);
+      y += 10;
+      doc.setFontSize(12);
+      if (report.generatedAt) {
+        doc.text('Generated: ' + new Date(report.generatedAt).toLocaleString(), 14, y);
+        y += 8;
+      }
+      if (report.period) {
+        doc.text('Period: ' + report.period, 14, y);
+        y += 8;
+      }
+      
+      // Content sections
+      if (report.sections) {
+        report.sections.forEach(section => {
+          y += 8;
+          doc.setFontSize(14);
+          doc.text(section.header, 14, y);
+          y += 6;
+          doc.setFontSize(11);
+          if (section.text) {
+            const lines = doc.splitTextToSize(section.text, 180);
+            doc.text(lines, 14, y);
+            y += (lines.length * 6) + 4;
+          }
+          if (section.table) {
+            autoTable(doc, {
+              startY: y,
+              head: [section.table.headers],
+              body: section.table.rows,
+              theme: 'grid',
+              headStyles: { fillColor: [55, 65, 81], textColor: 255 },
+              bodyStyles: { textColor: 50 },
+              styles: { fontSize: 10 },
+            });
+            y = (doc as any).lastAutoTable.finalY + 4;
+          }
+        });
+      }
+      
+      // Recommendations
+      if (report.recommendations && report.recommendations.length > 0) {
+        y += 8;
+        doc.setFontSize(14);
+        doc.text('Recommendations', 14, y);
+        y += 6;
+        doc.setFontSize(11);
+        report.recommendations.forEach(rec => {
+          doc.text('- ' + rec, 14, y);
+          y += 6;
+        });
+      }
+      
+      doc.save('security_report.pdf');
+    } catch (e) {
+      setError('Failed to build PDF: ' + (e.message || e));
+    }
+  };
+
+  // Main handler
+  const handleGeneratePDF = async () => {
+    setError('');
+    setLoading(true);
+    const promptData = buildPromptData();
+    const report = await callHuggingFace(promptData);
+    if (report) buildPDF(report);
+    setLoading(false);
   };
 
   const threatDistribution = [
@@ -104,48 +222,20 @@ const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats 
     { name: 'Low', value: threats.filter(t => t.severity === 'LOW').length, color: '#3b82f6' }
   ];
 
-  // Generate hourly activity data based on actual log entries
-  const hourlyActivity = Array.from({ length: 24 }, (_, hour) => {
-    // Count attempts and threats for each hour
-    const hourAttempts = logEntries.filter(entry => {
-      const entryHour = new Date(entry.timestamp).getHours();
-      return entryHour === hour;
-    });
-    
-    const hourThreats = threats.filter(threat => {
-      const threatHour = new Date(threat.timestamp).getHours();
-      return threatHour === hour;
-    });
-    
-    return {
-      hour,
-      attempts: hourAttempts.length || 0,
-      threats: hourThreats.length || 0
-    };
+  // Generate hourly activity from real logEntries
+  const hourlyActivity = Array.from({ length: 24 }, (_, i) => ({
+    hour: i,
+    attempts: 0,
+    threats: 0
+  }));
+  logEntries.forEach(entry => {
+    const date = new Date(entry.timestamp);
+    if (!isNaN(date.getTime())) {
+      const hour = date.getHours();
+      hourlyActivity[hour].attempts++;
+      // Optionally, count threats if entry is a threat
+    }
   });
-
-  const generateReport = () => {
-    const report = {
-      timestamp: new Date().toISOString(),
-      summary: {
-        totalAttempts: stats.totalAttempts,
-        failedAttempts: stats.failedAttempts,
-        successfulLogins: stats.successfulLogins,
-        uniqueIPs: stats.uniqueIPs,
-        threatsDetected: stats.threatsDetected
-      },
-      threats: threats,
-      recentLogs: logEntries.slice(-10)
-    };
-
-    const reportContent = JSON.stringify(report, null, 2);
-    const blob = new Blob([reportContent], { type: 'application/json' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `security_report_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-  };
 
   return (
     <div className="space-y-6">
@@ -179,28 +269,22 @@ const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats 
                 onChange={(e) => setReportType(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-white"
               >
-                <option value="security">Security Summary</option>
+                <option value="security">Summary</option>
                 <option value="detailed">Detailed Analysis</option>
                 <option value="compliance">Compliance Report</option>
               </select>
             </div>
             <div className="flex gap-2">
               <Button
-                onClick={() => exportReport('json')}
-                className="bg-blue-600 hover:bg-blue-700"
+                onClick={handleGeneratePDF}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+                disabled={loading}
               >
-                <Download className="h-4 w-4 mr-2" />
-                JSON
-              </Button>
-              <Button
-                onClick={() => exportReport('csv')}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                CSV
+                {loading ? 'Generating...' : 'Generate PDF'}
               </Button>
             </div>
           </div>
+          {error && <div className="text-red-400 mt-4">{error}</div>}
         </CardContent>
       </Card>
 
@@ -213,28 +297,28 @@ const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats 
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
               <span className="text-gray-400">Success Rate</span>
-              <span className="text-green-400 font-bold">{report.summary.successRate}%</span>
+              <span className="text-green-400 font-bold">{stats.successRate}%</span>
             </div>
-            <Progress value={parseFloat(report.summary.successRate)} className="h-2" />
+            <Progress value={parseFloat(stats.successRate)} className="h-2" />
             
             <div className="flex justify-between items-center">
               <span className="text-gray-400">Total Attempts</span>
-              <span className="text-white font-bold">{report.summary.totalAttempts}</span>
+              <span className="text-white font-bold">{stats.totalAttempts}</span>
             </div>
             
             <div className="flex justify-between items-center">
               <span className="text-gray-400">Failed Attempts</span>
-              <span className="text-red-400 font-bold">{report.summary.failedAttempts}</span>
+              <span className="text-red-400 font-bold">{stats.failedAttempts}</span>
             </div>
             
             <div className="flex justify-between items-center">
               <span className="text-gray-400">Unique IPs</span>
-              <span className="text-blue-400 font-bold">{report.summary.uniqueIPs}</span>
+              <span className="text-blue-400 font-bold">{stats.uniqueIPs}</span>
             </div>
             
             <div className="flex justify-between items-center">
               <span className="text-gray-400">Threats Detected</span>
-              <span className="text-yellow-400 font-bold">{report.summary.threatsDetected}</span>
+              <span className="text-yellow-400 font-bold">{threats.length}</span>
             </div>
           </CardContent>
         </Card>
@@ -244,29 +328,37 @@ const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats 
             <CardTitle className="text-white">Threat Distribution</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={threatDistribution}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                >
-                  {threatDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: '#1f2937', 
-                    border: '1px solid #374151',
-                    color: '#fff'
-                  }} 
-                />
-              </PieChart>
-            </ResponsiveContainer>
+            {threats.length === 0 ? (
+              <div className="text-center py-12">
+                <Shield className="h-12 w-12 text-green-400 mx-auto mb-4" />
+                <p className="text-lg font-medium text-white">All Clear</p>
+                <p className="text-slate-300">No threats detected</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={threatDistribution}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  >
+                    {threatDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: '#1f2937', 
+                      border: '1px solid #374151',
+                      color: '#fff'
+                    }} 
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -277,22 +369,30 @@ const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats 
           <CardTitle className="text-white">24-Hour Activity Overview</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={hourlyActivity}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="hour" tick={{ fill: '#9ca3af' }} />
-              <YAxis tick={{ fill: '#9ca3af' }} />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: '#1f2937', 
-                  border: '1px solid #374151',
-                  color: '#fff'
-                }} 
-              />
-              <Bar dataKey="attempts" fill="#3b82f6" name="Login Attempts" />
-              <Bar dataKey="threats" fill="#ef4444" name="Threats" />
-            </BarChart>
-          </ResponsiveContainer>
+          {logEntries.length === 0 ? (
+            <div className="text-center py-12">
+              <Shield className="h-12 w-12 text-green-400 mx-auto mb-4" />
+              <p className="text-lg font-medium text-white">All Clear</p>
+              <p className="text-slate-300">No authentication attempts recorded</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={hourlyActivity}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="hour" tick={{ fill: '#9ca3af' }} />
+                <YAxis tick={{ fill: '#9ca3af' }} />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: '#1f2937', 
+                    border: '1px solid #374151',
+                    color: '#fff'
+                  }} 
+                />
+                <Bar dataKey="attempts" fill="#3b82f6" name="Login Attempts" />
+                <Bar dataKey="threats" fill="#ef4444" name="Threats" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </CardContent>
       </Card>
 
@@ -306,7 +406,7 @@ const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats 
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[300px]">
-            {report.recommendations.length === 0 ? (
+            {threats.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 <Shield className="h-12 w-12 mx-auto mb-4 text-green-400" />
                 <p>No immediate security recommendations</p>
@@ -314,21 +414,21 @@ const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats 
               </div>
             ) : (
               <div className="space-y-4">
-                {report.recommendations.map((rec, index) => (
+                {threats.map((threat, index) => (
                   <div
-                    key={index}
+                    key={threat.id}
                     className="p-4 bg-slate-700/30 rounded-lg border-l-4 border-yellow-500"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-2">
                           <AlertTriangle className="h-4 w-4 text-yellow-400" />
-                          <h3 className="text-white font-medium">{rec.title}</h3>
-                          <Badge variant={rec.type === 'CRITICAL' ? 'destructive' : 'secondary'}>
-                            {rec.type}
+                          <h3 className="text-white font-medium">{threat.type}</h3>
+                          <Badge variant={threat.severity === 'HIGH' ? 'destructive' : 'secondary'}>
+                            {threat.severity}
                           </Badge>
                         </div>
-                        <p className="text-gray-300 text-sm">{rec.description}</p>
+                        <p className="text-gray-300 text-sm">{threat.description}</p>
                       </div>
                     </div>
                   </div>
@@ -346,13 +446,13 @@ const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats 
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[250px]">
-            {report.topThreats.length === 0 ? (
+            {threats.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 No threats detected in this period
               </div>
             ) : (
               <div className="space-y-3">
-                {report.topThreats.map((threat, index) => (
+                {threats.map((threat, index) => (
                   <div
                     key={threat.id}
                     className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg"
@@ -375,75 +475,6 @@ const ReportsPanel: React.FC<ReportsPanelProps> = ({ logEntries, stats, threats 
               </div>
             )}
           </ScrollArea>
-        </CardContent>
-      </Card>
-
-      {/* Report Generation */}
-      <Card className="bg-slate-800/50 border-slate-700">
-        <CardHeader>
-          <CardTitle className="text-white flex items-center">
-            <FileText className="h-5 w-5 mr-2 text-blue-400" />
-            Security Report
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">Summary</h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Total Attempts</span>
-                    <span className="text-white font-mono">{stats.totalAttempts}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Failed Attempts</span>
-                    <span className="text-red-400 font-mono">{stats.failedAttempts}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Successful Logins</span>
-                    <span className="text-green-400 font-mono">{stats.successfulLogins}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Unique IPs</span>
-                    <span className="text-purple-400 font-mono">{stats.uniqueIPs}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Threats Detected</span>
-                    <span className="text-yellow-400 font-mono">{stats.threatsDetected}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">Threat Overview</h3>
-                {threats.length === 0 ? (
-                  <p className="text-gray-400">No threats detected</p>
-                ) : (
-                  <div className="space-y-2">
-                    {threats.map((threat, index) => (
-                      <Alert key={index} className="border-red-500 bg-red-500/10">
-                        <AlertTriangle className="h-4 w-4 text-red-500" />
-                        <AlertDescription className="text-red-300">
-                          <strong>{threat.type}:</strong> {threat.description}
-                        </AlertDescription>
-                      </Alert>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={generateReport}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                <Download className="h-4 w-4" />
-                <span>Download Report</span>
-              </button>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>
