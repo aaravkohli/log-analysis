@@ -327,7 +327,7 @@ const Index = () => {
 
         {/* Enhanced Main Content Tabs with improved design */}
         <Card className="glass-effect shadow-xl border-purple-500/20 purple-glow backdrop-blur-xl">
-          <Tabs defaultValue="dashboard" className="w-full">
+          <Tabs defaultValue="import" className="w-full">
             <div className="border-b border-purple-500/20 bg-gradient-to-r from-purple-500/5 to-blue-500/5">
               <TabsList className="h-auto p-0 bg-transparent w-full">
                 <div className="flex overflow-x-auto scrollbar-hide">
